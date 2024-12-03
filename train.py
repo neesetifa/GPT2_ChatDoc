@@ -1,94 +1,72 @@
-#    Copyright 2023 Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li
-#
-#    Licensed under the Apache License, Version 2.0 (the "License");
-#    you may not use this file except in compliance with the License.
-#    You may obtain a copy of the License at
-#
-#        http://www.apache.org/licenses/LICENSE-2.0
-#
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS,
-#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#    See the License for the specific language governing permissions and
-#    limitations under the License.
-
 import logging
 from typing import Optional, Dict, Sequence
+import argparse
+import pdb
 
 import torch
 import transformers
-
 from transformers import Trainer
-from transformers import GPT2Tokenizer, GPT2LMHeadModel, TextGenerationPipeline
+from transformers import GPT2Tokenizer, GPT2LMHeadModel
+
 from dataset import SupervisedDataset, DataCollator
-
-import utils
-import pdb
+from utils import Metric
 
 
-DEFAULT_PAD_TOKEN = "[PAD]"
-DEFAULT_EOS_TOKEN = "</s>"
-DEFAULT_BOS_TOKEN = "</s>"
-DEFAULT_UNK_TOKEN = "</s>"
-
-
-def smart_tokenizer_and_embedding_resize(
-    special_tokens_dict: Dict,
-    tokenizer: transformers.PreTrainedTokenizer,
-    model: transformers.PreTrainedModel,
-):
-    """Resize tokenizer and embedding.
-
-    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
-    """
-    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
-    model.resize_token_embeddings(len(tokenizer))
-
-    if num_new_tokens > 0:
-        input_embeddings = model.get_input_embeddings().weight.data
-        output_embeddings = model.get_output_embeddings().weight.data
-
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-
-        input_embeddings[-num_new_tokens:] = input_embeddings_avg
-        output_embeddings[-num_new_tokens:] = output_embeddings_avg
-
-
-def train():
-    tokenizer = GPT2Tokenizer.from_pretrained('./gpt2_pretrained/gpt2_124M/')
-    model = GPT2LMHeadModel.from_pretrained('./gpt2_pretrained/gpt2_124M/')
+def train(args):
+    tokenizer = GPT2Tokenizer.from_pretrained(args.pretrained_weight)
+    model = GPT2LMHeadModel.from_pretrained(args.pretrained_weight)
     tokenizer.pad_token = tokenizer.eos_token
-    # print(tokenizer.pad_token_id)
 
-    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path='dataset/alpaca_data_52k.json')
+    dataset = load_dataset(tokenizer=tokenizer, data_path=args.dataset, split = True)
+    train_dataset, val_dataset = dataset['train_dataset'], dataset['val_dataset']
     data_collator = DataCollator(tokenizer=tokenizer)
+
+    eval_metric = Metric(tokenizer, decoding_strategy = 'greedy', model = model)
     
     trainer = Trainer(model=model,
                       tokenizer=tokenizer,
                       args=transformers.TrainingArguments(
-                          per_device_train_batch_size = 4,
-                          gradient_accumulation_steps = 4,
-                          warmup_steps = 500,
-                          num_train_epochs = 3,
-                          learning_rate = 5e-5,
-                          fp16 = True,
+                          per_device_train_batch_size = args.batch_size,
+                          gradient_accumulation_steps = args.batch_accumulation,
+                          warmup_steps = args.warmup,
+                          num_train_epochs = args.epochs,
+                          learning_rate = args.lr,
+                          fp16 = args.fp16,
                           logging_steps = 100,
-                          optim = "adamw_torch",
-                          evaluation_strategy = "no", #"steps",
-                          save_strategy = "steps",
-                          eval_steps = None,
+                          optim = args.optimizer,
+                          save_strategy = 'steps',
                           save_steps = 100,
-                          output_dir = 'exp',
+                          output_dir = args.output_dir,
                           save_total_limit = 3,
+                          evaluation_strategy = 'steps' if val_dataset else 'no',
+                          eval_steps = 1000 if val_dataset else None,
                           load_best_model_at_end = False,
                       ),
                       train_dataset=train_dataset,
-                      eval_dataset=None,
-                      data_collator=data_collator)
+                      eval_dataset=val_dataset,
+                      data_collator=data_collator,
+                      compute_metrics = eval_metric)
     print('Start training...')
     trainer.train()
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--pretrained_weight', type=str, default='./exp/checkpoint-9700/', help='./gpt2_pretrained/gpt2_124M/')
+    parser.add_argument('--dataset', type=str, default='dataset/chatdoctor200k.json', help='dataset/alpaca_data_52k.json')
+    parser.add_argument('--split', type=bool, default=True, help='False')
+    parser.add_argument('--epochs', type=int, default=5, help='total training epochs, 3')
+    parser.add_argument('--warmup', type=int, default=500, help='warmup steps')
+    parser.add_argument('--batch_size', type=int, default=4, help='total batch size for all GPUs')
+    parser.add_argument('--batch_accumulation', type=int, default=4, help='batch accumulation')
+    parser.add_argument('--lr', type=float, default=5e-5, help='learning rate')
+    parser.add_argument('--optimizer', type=str, default='adamw_torch', help='')
+    parser.add_argument('--fp16', type=bool, default=True, help='enable fp16 training')
+    parser.add_argument('--output_dir', type=str, default='exp2', help='')
+    
+    return parser.parse_args()
+
+    
 if __name__ == "__main__":
-    train()
+    args = parse_args()
+    train(args)
