@@ -4,6 +4,18 @@ import torch
 from metrics.bleu import bleu
 from metrics.rouge import rouge
 
+def preprocess_logits_for_metrics(logits, labels):
+    # logits shape = [batch, seq_len_pred, vocab_size]
+    # labels shape = [batch, seq_len_label]
+    # technically seq_len_pred = seq_len_label
+    pred_ids = logits.argmax(dim=-1)  # use greedy search during training
+    return pred_ids
+    
+
+# TODO
+# This function is called after evaluating on the whole dataset in transformers.Trainer
+# if used as compute_metrics function, 
+# For beam search and topkp, need to rewrite trainer prediction_step() and add this Metric.
 class Metric:
     def __init__(self, tokenizer, decoding_strategy:str = 'greedy', model = None):
         assert decoding_strategy in ['greedy', 'beam', 'topkp'], \
@@ -17,17 +29,22 @@ class Metric:
         self.decoding_strategy = decoding_strategy
         
     def __call__(self, eval_pred, debug_mode = False):
-        logits, labels = eval_pred
-        # logits shape = [batch, seq_len_pred, vocab_size]
-        # labels shape = [batch, seq_len_label]
+        preds, labels = eval_pred.predictions, eval_pred.label_ids
+        # predss shape = [whole_val_dataset, max_seq_len_pred = 1024]
+        # labels shape = [whole_val_dataset, max_seq_len_label = 1024]
 
-        # prediction
+        # shift preds and labels
+        shift_preds = preds[..., :-1]
+        shift_labels = labels[..., 1:]
+        ignore_idx = shift_labels == -100
+        shift_preds[ignore_idx] = self.tokenizer.pad_token_id
+        shift_labels[ignore_idx] = self.tokenizer.pad_token_id
+        
+        # evaluate
+        print('Decoding...')
         if self.decoding_strategy == 'greedy':
-            if debug_mode:
-                predictions = logits
-            else:
-                predictions = logits.argmax(dim=-1)
-            decoded_preds = self.tokenizer.batch_decode(predictions, skip_special_tokens=True)
+            decoded_preds = self.tokenizer.batch_decode(shift_preds, skip_special_tokens=True)
+            
         elif self.decoding_strategy == 'beam':
             batch_size = logits.shape[0]
             decoded_preds = []
@@ -53,15 +70,15 @@ class Metric:
                 decoded_pred.append(self.tokenizer.decode(outputs[0], skip_special_tokens = True))
             
         # label
-        decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens = True)
+        decoded_labels = self.tokenizer.batch_decode(shift_labels, skip_special_tokens = True)
         references = [[ref] for ref in decoded_labels]
 
         # score
         if debug_mode:
             print(decoded_preds, decoded_labels)
+        print('Calculating scores...')
         bleu_score = bleu(predictions = decoded_preds, references = references)
-        rouge_score = rouge(predictions = decoded_preds, references = decoded_labels)
-        
+        rouge_score = rouge(predictions = decoded_preds, references = decoded_labels, use_aggregator = True)
         return dict(bleu = bleu_score['bleu'],
                     rouge1 = rouge_score['rouge1'],
                     rougeL = rouge_score['rougeL'])
