@@ -94,7 +94,7 @@ def preprocess(sources: Sequence[str], targets: Sequence[str], tokenizer) -> Dic
     input_ids = examples_tokenized["input_ids"]
     labels = copy.deepcopy(input_ids)
     for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
-        label[:source_len] = IGNORE_INDEX  # 前半部分设置为忽略index
+        label[:source_len] = IGNORE_INDEX  # label前半部分设置为忽略index
     return dict(input_ids=input_ids, labels=labels)
 
 
