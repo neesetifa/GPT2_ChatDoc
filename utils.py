@@ -47,7 +47,7 @@ def jload(f, mode="r"):
     return jdict
 
 
-def smart_tokenizer_and_embedding_resize(special_tokens_dict: Dict, tokenizer, model):
+def smart_tokenizer_and_embedding_resize(special_tokens_dict: dict, tokenizer, model):
     """Resize tokenizer and embedding.
     Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
     """
@@ -63,3 +63,16 @@ def smart_tokenizer_and_embedding_resize(special_tokens_dict: Dict, tokenizer, m
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+
+def parse_lora_config(args, fan_in_fan_out = False):
+    lora_config = {k:v for k, v in vars(args).items() if 'lora' in k}
+    lora_config['r'] = lora_config['lora_r']
+    lora_config['target_modules'] = lora_config['lora_target_modules']
+    lora_config['task_type'] = lora_config['lora_task_type']
+    del lora_config['enable_lora']
+    del lora_config['lora_r']
+    del lora_config['lora_target_modules']
+    del lora_config['lora_task_type']
+    lora_config['fan_in_fan_out'] = fan_in_fan_out
+    return lora_config
