@@ -26,5 +26,6 @@ python demo.py --model_path <path_to_trained_model>
 - [x] LoRA with larger GPT-2 model
 - [ ] Retrieval Augmented Generation
 - [ ] RLHF
+  - [ ] PPO
+  - [ ] GRPO
 - [ ] Improve the chatbot's long-term memory retention
-- [ ] Implement knowledge-grounded dialogue generation
