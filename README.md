@@ -22,10 +22,11 @@ To run inference:
 python demo.py --model_path <path_to_trained_model>
 ```
 
-#### To do List
+#### Progress
 - [x] LoRA with larger GPT-2 model
-- [ ] Retrieval Augmented Generation
 - [ ] RLHF
-  - [ ] PPO
+  - [x] SFT on Alpaca Dataset and Medical Dataset(Instruction Following)
+  - [x] No need for reward model
   - [ ] GRPO
+- [ ] Retrieval Augmented Generation
 - [ ] Improve the chatbot's long-term memory retention
